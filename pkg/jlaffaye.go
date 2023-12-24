@@ -3,9 +3,11 @@ package pkg
 import (
 	"bufio"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"github.com/jlaffaye/ftp"
 	"io"
+	"net/textproto"
 	"os"
 	"os/exec"
 	"strings"
@@ -58,11 +60,8 @@ func lectorPrincipal() error {
 	fmt.Printf("3: %-20s 4: %-20s\n", "CWD", "Retr")
 	fmt.Printf("5: %-20s\n", "CLEAR")
 	var (
-		c         *ftp.ServerConn
-		err       error
-		flagExit2 bool
-		flagExit3 bool
-		flagExit4 bool
+		c   *ftp.ServerConn
+		err error
 	)
 
 	// Usar el scanner para leer una línea del canal estándar de entrada
@@ -80,83 +79,65 @@ func lectorPrincipal() error {
 		switch textoStruct.Comando {
 		case "1":
 			c, err = conexionFtp()
-			fmt.Println("Sesión iniciada correctamente [Conexión - Autenticación]")
+			fmt.Println(" [SUCCSESS] - Sesión iniciada correctamente [Conexión - Autenticación]")
 			if err != nil {
 				return err
 			}
+
 		case "ayuda":
 			listarComandos()
-		case "2":
-			fmt.Println("Ingrese el directorio a listar (vacio si se quiere directorio raíz)")
-			for !flagExit2 && scanner.Scan() {
 
-				texto := scanner.Text()
-				switch texto {
-				case "salir":
-					flagExit2 = true
-				default:
-					err = listarDirectorio(texto, c)
-					if err != nil {
-						return err
+		case "2":
+			err = listarDirectorio(textoStruct.Valor, c)
+			if err != nil {
+				var tpErr *textproto.Error
+				if errors.As(err, &tpErr) {
+					switch tpErr.Code {
+					case 550:
+						fmt.Printf("[ERROR] - El directorio %s no existe\n", textoStruct.Valor)
 					}
 				}
-				fmt.Println("Ingrese 'salir' para volver al menú principal")
 			}
 
 		case "3":
-			fmt.Println("Ingrese el directorio a cambiar (vacio si se quiere directorio raíz)")
-			for !flagExit3 && scanner.Scan() {
-
-				texto := scanner.Text()
-				switch texto {
-				case "salir":
-					flagExit3 = true
-				case "":
-					err := cambiarDirectorio("..", c)
-					if err != nil {
-						return err
-					}
-				default:
-					err := cambiarDirectorio(texto, c)
-					if err != nil {
-						fmt.Println("El directorio no existe")
+			err := cambiarDirectorio(textoStruct.Valor, c)
+			if err != nil {
+				var tpErr *textproto.Error
+				if errors.As(err, &tpErr) {
+					switch tpErr.Code {
+					case 550:
+						fmt.Printf("[ERROR] - El directorio %s no existe\n", textoStruct.Valor)
 					}
 				}
-				err = listarDirectorio("", c)
-				if err != nil {
-					return err
-				}
-				fmt.Println("Ingrese 'salir' para volver al menú principal o introduce el directorio")
 			}
 
 		case "4":
-			fmt.Println("Ingrese el nombre del fichero completo a descargar")
-			for !flagExit4 && scanner.Scan() {
-
-				texto := scanner.Text()
-				switch texto {
-				case "salir":
-					flagExit4 = true
-				default:
-					err = descargaFichero(texto, c)
-					if err != nil {
-						return err
+			switch textoStruct.Valor {
+			case "":
+				fmt.Println("[WARNING] - Insertar el nombre del fichero")
+			}
+			err = descargaFichero(textoStruct.Valor, c)
+			if err != nil {
+				var tpErr *textproto.Error
+				if errors.As(err, &tpErr) {
+					switch tpErr.Code {
+					case 550:
+						fmt.Printf("[ERROR] - El fichero %s no existe\n", textoStruct.Valor)
 					}
 				}
-				fmt.Println("Ingrese 'salir' para volver al menú principal")
 			}
+
 		case "5":
 			err := limpiarConsola()
 			if err != nil {
-				fmt.Println("No se pudo limpiar la consola")
+				fmt.Println("[ERROR] - No se pudo limpiar la consola")
 			}
 
 		default:
-			fmt.Println("Porfavor, ingrese un código correcto")
+			fmt.Println("[WARNING] - Porfavor, ingrese un código correcto")
 		}
 
 		fmt.Print("Ingresa el comando (o presiona Ctrl+C para salir o 'ayuda' para mostrar los comandos): ")
-		flagExit2, flagExit3, flagExit4 = false, false, false
 	}
 
 	err = c.Quit()
@@ -193,7 +174,7 @@ func conexionFtp() (conn *ftp.ServerConn, err error) {
 
 // Operación #2 para listar ficheros y directorios usando el comando LIST de FTP
 func listarDirectorio(directorio string, conn *ftp.ServerConn) error {
-	fmt.Println("Empiezo a listar: [directorios - ficheros]")
+	fmt.Printf("[SUCCSESS] - Empiezo a listar del directorio: %s\n", directorio)
 	entries, err := conn.List(directorio)
 	if err != nil {
 		return err
